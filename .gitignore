@@ -1,0 +1,21 @@
+.DS_Store
+node_modules/
+dist/
+outputs/
+.codex_spreadsheet_work/
+
+# Local Excel working copies and backups. The app uses public/data/*.xlsx.
+*.xlsx
+!public/data/RPA_Project_Tracker_Web_Ready.xlsx
+update_rpa_tracker_web_ready.py
+
+# TypeScript/Vite generated artifacts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Logs and environment
+*.log
+.env
+.env.*
+!.env.example
