@@ -4,8 +4,7 @@ import { Process } from "../data/types";
 
 export function rowsForExport(processes: Process[]) {
   return processes.map((process) => ({
-    "Process ID": process.processId,
-    "Process Name": process.processName,
+    Process: process.processName,
     Department: process.department,
     "Current Stage": process.currentStage,
     Status: process.overallStatus,
@@ -40,7 +39,7 @@ export function downloadPdf(processes: Process[], filename = "rpa-report.pdf") {
   doc.text("RPA Project Control Center Report", 14, 18);
   doc.setFontSize(10);
   processes.slice(0, 28).forEach((process, index) => {
-    doc.text(`${process.processId} | ${process.processName} | ${process.overallStatus} | ${process.health}`, 14, 30 + index * 8);
+    doc.text(`${process.processName || "Not provided"} | ${process.overallStatus} | ${process.health}`, 14, 30 + index * 8);
   });
   doc.save(filename);
 }

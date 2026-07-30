@@ -58,8 +58,8 @@ Invalid uploads do not replace the active data.
 
 Key mappings:
 
-- `Process ID` → `process.processId`
-- `Process` → `process.processName`
+- `Process` → `process.processName`, the primary user-facing process name
+- `Process ID` → `process.processId`, retained internally for linking and upload validation
 - `Process / Phase` → process summary marker or `phase.phaseName`
 - `Status` → status fields
 - `Progress` → completion percentage

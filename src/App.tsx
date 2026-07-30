@@ -97,6 +97,10 @@ function display(value?: string | number | boolean) {
   return String(value);
 }
 
+function processLabel(process: Process) {
+  return display(process.processName);
+}
+
 function pct(value: number) {
   return `${Math.round(value * 100)}%`;
 }
@@ -304,7 +308,7 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
             <div className="attention-list">
               {attention.slice(0, 8).map((process) => (
                 <button className="attention-item" key={process.processId} onClick={() => openProcess(process)}>
-                  <div><strong>{process.processId}</strong><span>{process.processName}</span></div>
+                  <div><strong>{processLabel(process)}</strong><span>{display(process.department)}</span></div>
                   <Badge value={process.priority} type="priority" />
                   <span>{process.currentStage}</span>
                   <span>{display(process.waitingFor)}</span>
@@ -324,7 +328,7 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
                 <span>{insight.type}</span>
                 <strong>{insight.title}</strong>
                 <p>{insight.evidence}</p>
-                {!!insight.processIds?.length && <small>{insight.processIds.slice(0, 8).join(", ")}</small>}
+                {!!insight.processIds?.length && <small>{data.processes.filter((process) => insight.processIds?.includes(process.processId)).slice(0, 8).map(processLabel).join(", ")}</small>}
               </div>
             ))}
           </div>
@@ -340,8 +344,8 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
           <Fact label="Highest phase volume" value={bottle.topStage ? `${bottle.topStage.name} (${bottle.topStage.value})` : "Insufficient data"} />
           <Fact label="Highest pending party" value={bottle.topWaiting ? `${bottle.topWaiting.name} (${bottle.topWaiting.value})` : "Insufficient data"} />
           <Fact label="Common delay reason" value={bottle.topDelayReason ? `${bottle.topDelayReason.name} (${bottle.topDelayReason.value})` : "Insufficient data"} />
-          <Fact label="Oldest active blocker" value={bottle.oldestBlocker ? `${bottle.oldestBlocker.processId} · ${formatDate(bottle.oldestBlocker.lastUpdated, true)}` : "No active blockers"} />
-          <Fact label="Longest delay" value={bottle.longestDelay ? `${bottle.longestDelay.processId} · ${bottle.longestDelay.varianceDays} days` : "Insufficient data"} />
+          <Fact label="Oldest active blocker" value={bottle.oldestBlocker ? `${processLabel(bottle.oldestBlocker)} · ${formatDate(bottle.oldestBlocker.lastUpdated, true)}` : "No active blockers"} />
+          <Fact label="Longest delay" value={bottle.longestDelay ? `${processLabel(bottle.longestDelay)} · ${bottle.longestDelay.varianceDays} days` : "Insufficient data"} />
           <Fact label="Recently stale" value={bottle.stale.length ? `${bottle.stale.length} processes` : "None"} />
         </div>
       </Panel>
@@ -373,11 +377,11 @@ function ProcessesPage(props: { processes: Process[]; allProcesses: Process[]; f
 }
 
 function ProcessCard({ process, onClick }: { process: Process; onClick: () => void }) {
-  const statusSummary = `${process.processId} ${process.processName}: ${process.overallStatus}, ${pct(process.progress)}, ${process.health}, due ${formatDate(process.dueDate)}. Next action: ${display(process.nextAction)}.`;
+  const statusSummary = `${processLabel(process)}: ${process.overallStatus}, ${pct(process.progress)}, ${process.health}, due ${formatDate(process.dueDate)}. Next action: ${display(process.nextAction)}.`;
   return (
     <motion.article className={`process-card ${needsAttention(process) ? "needs-attention" : ""}`} whileHover={{ y: -3 }} onClick={onClick}>
       <div className="card-top">
-        <div><strong>{process.processId}</strong><h3>{process.processName}</h3><p>{display(process.department)}</p></div>
+        <div><strong>Process</strong><h3>{processLabel(process)}</h3><p>{display(process.department)}</p></div>
         <Badge value={process.health || "System warning"} type="health" />
       </div>
       <div className="progress-row"><span>{process.currentStage}</span><strong>{pct(process.progress)}</strong></div>
@@ -408,8 +412,7 @@ function ProcessTable({ processes, openProcess }: { processes: Process[]; openPr
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const columns = useMemo<ColumnDef<Process>[]>(() => [
-    { accessorKey: "processId", header: "Process ID" },
-    { accessorKey: "processName", header: "Process Name" },
+    { accessorKey: "processName", header: "Process", cell: (info) => display(info.getValue<string>()) },
     { accessorKey: "department", header: "Department", cell: (info) => display(info.getValue<string>()) },
     { accessorKey: "currentStage", header: "Current Stage" },
     { accessorKey: "overallStatus", header: "Status", cell: (info) => <Badge value={info.getValue<string>()} type="status" /> },
@@ -452,7 +455,7 @@ function ProcessTable({ processes, openProcess }: { processes: Process[]; openPr
 function ProcessDetails({ process, activities }: { process: Process; activities: Activity[] }) {
   const relatedActivities = activities.filter((activity) => activity.processId === process.processId).sort((a, b) => new Date(b.updateDate || 0).getTime() - new Date(a.updateDate || 0).getTime());
   return (
-    <Panel title={`${process.processId} · ${process.processName}`} subtitle="Process detail page">
+    <Panel title={processLabel(process)} subtitle="Process detail page">
       <div className="details-header">
         <Badge value={process.priority} type="priority" /><Badge value={process.overallStatus} type="status" /><Badge value={process.health || "System warning"} type="health" /><Badge value={process.blocked ? "Blocked" : "Not blocked"} type="blocked" />
         <strong>{pct(process.progress)}</strong><span>{process.currentStage}</span><span>{display(process.currentOwner)}</span><span>{display(process.waitingFor)}</span><span>{formatDate(process.dueDate)}</span><span>{process.varianceDays} delay days</span>
@@ -491,7 +494,7 @@ function TimelinePage({ processes, openProcess }: { processes: Process[]; openPr
       <Panel title={`${mode === "process" ? "Process" : "Phase"} Timeline`} subtitle={`Viewing by ${scale}. Today is marked visually when it falls within the range.`}>
         <div className="gantt">
           {processes.map((process) => {
-            const rows = mode === "process" ? [{ name: process.processName, start: process.plannedStart, finish: process.plannedFinish, health: process.health, blocked: process.blocked, status: process.overallStatus }] : process.phases.map((phase) => ({ name: `${process.processId} · ${phase.phaseName}`, start: phase.plannedStart, finish: phase.plannedFinish, health: phase.health, blocked: phase.blocked, status: phase.status }));
+            const rows = mode === "process" ? [{ name: processLabel(process), start: process.plannedStart, finish: process.plannedFinish, health: process.health, blocked: process.blocked, status: process.overallStatus }] : process.phases.map((phase) => ({ name: `${processLabel(process)} · ${phase.phaseName}`, start: phase.plannedStart, finish: phase.plannedFinish, health: phase.health, blocked: phase.blocked, status: phase.status }));
             return rows.map((row) => {
               const left = row.start ? ((new Date(row.start).getTime() - min) / span) * 100 : 0;
               const width = row.finish && row.start ? Math.max(((new Date(row.finish).getTime() - new Date(row.start).getTime()) / span) * 100, 2) : 2;
@@ -520,7 +523,7 @@ function KanbanPage({ processes, openProcess }: { processes: Process[]; openProc
             <h3>{stage}<span>{processes.filter((p) => p.currentStage === stage || (stage === "Completed" && p.overallStatus === "Completed")).length}</span></h3>
             {processes.filter((p) => p.currentStage === stage || (stage === "Completed" && p.overallStatus === "Completed")).map((process) => (
               <button className="kanban-card" key={process.processId} onClick={() => openProcess(process)}>
-                <strong>{process.processId}</strong><span>{process.processName}</span><Badge value={process.health} type="health" /><small>{display(process.currentOwner)} · {formatDate(process.dueDate)}</small>{process.blocked && <em><Lock size={13} /> Blocked</em>}
+                <strong>{processLabel(process)}</strong><Badge value={process.health} type="health" /><small>{display(process.currentOwner)} · {formatDate(process.dueDate)}</small>{process.blocked && <em><Lock size={13} /> Blocked</em>}
               </button>
             ))}
           </section>
@@ -536,7 +539,7 @@ function BlockersPage({ processes, openProcess }: { processes: Process[]; openPr
     return process.blocked && phaseBlockers.length === 0 ? [{ process, phase: process.currentStage, description: process.blockerDescription, waitingFor: process.waitingFor, dueDate: process.dueDate, delay: process.varianceDays, owner: process.currentOwner, priority: process.priority, nextAction: process.nextAction, lastUpdated: process.lastUpdated }] : phaseBlockers;
   });
   if (!blocked.length) return <div className="page"><EmptyState title="No active blockers were found." description="Blocked = Yes was not found in the active uploaded Excel data." icon={CheckCircle2} /></div>;
-  return <div className="page stack"><Toolbar title="Blockers" count={blocked.length} /><div className="blocker-grid">{blocked.map((item) => <button className="blocker-card" key={`${item.process.processId}-${item.phase}`} onClick={() => openProcess(item.process)}><Badge value={item.priority} type="priority" /><h3>{item.process.processId} · {item.process.processName}</h3><p>{display(item.description)}</p><dl><dt>Phase</dt><dd>{item.phase}</dd><dt>Owner</dt><dd>{display(item.owner)}</dd><dt>Waiting For</dt><dd>{display(item.waitingFor)}</dd><dt>Due</dt><dd>{formatDate(item.dueDate)}</dd><dt>Delay</dt><dd>{item.delay} days</dd><dt>Last Updated</dt><dd>{formatDate(item.lastUpdated, true)}</dd></dl><strong>{display(item.nextAction)}</strong></button>)}</div></div>;
+  return <div className="page stack"><Toolbar title="Blockers" count={blocked.length} /><div className="blocker-grid">{blocked.map((item) => <button className="blocker-card" key={`${item.process.processId}-${item.phase}`} onClick={() => openProcess(item.process)}><Badge value={item.priority} type="priority" /><h3>{processLabel(item.process)}</h3><p>{display(item.description)}</p><dl><dt>Phase</dt><dd>{item.phase}</dd><dt>Owner</dt><dd>{display(item.owner)}</dd><dt>Waiting For</dt><dd>{display(item.waitingFor)}</dd><dt>Due</dt><dd>{formatDate(item.dueDate)}</dd><dt>Delay</dt><dd>{item.delay} days</dd><dt>Last Updated</dt><dd>{formatDate(item.lastUpdated, true)}</dd></dl><strong>{display(item.nextAction)}</strong></button>)}</div></div>;
 }
 
 function ActivityPage({ activities, processes }: { activities: Activity[]; processes: Process[] }) {
@@ -546,7 +549,7 @@ function ActivityPage({ activities, processes }: { activities: Activity[]; proce
   return (
     <div className="page stack">
       <Toolbar title="Activity Log" count={filtered.length}><Segmented value={tableView} options={[["timeline", null, "Timeline"], ["table", null, "Table"]]} onChange={setTableView} /><label className="mini-search"><Search size={15} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter activity" /></label></Toolbar>
-      {!activities.length ? <EmptyState title="No activity history is currently available. Activity records can be added to the Excel Activity Log sheet and uploaded again." icon={List} /> : tableView === "timeline" ? <Panel title="Timeline View">{filtered.map((activity) => <ActivityItem key={activity.activityId} activity={activity} />)}</Panel> : <Panel title="Table View"><div className="table-wrap"><table className="data-table"><thead><tr>{["Update Date", "Process", "Phase", "Updated By", "Previous", "New", "Next Action", "Waiting For", "Blocker", "Due Date"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{filtered.map((activity) => <tr key={activity.activityId}><td>{formatDate(activity.updateDate, true)}</td><td>{activity.processId || processes.find((p) => p.processName === activity.processName)?.processId}</td><td>{activity.phase}</td><td>{activity.updatedBy}</td><td>{activity.previousStatus}</td><td>{activity.newStatus}</td><td>{activity.nextAction}</td><td>{activity.waitingFor}</td><td>{activity.blocker}</td><td>{formatDate(activity.dueDate)}</td></tr>)}</tbody></table></div></Panel>}
+      {!activities.length ? <EmptyState title="No activity history is currently available. Activity records can be added to the Excel Activity Log sheet and uploaded again." icon={List} /> : tableView === "timeline" ? <Panel title="Timeline View">{filtered.map((activity) => <ActivityItem key={activity.activityId} activity={activity} />)}</Panel> : <Panel title="Table View"><div className="table-wrap"><table className="data-table"><thead><tr>{["Update Date", "Process", "Phase", "Updated By", "Previous", "New", "Next Action", "Waiting For", "Blocker", "Due Date"].map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{filtered.map((activity) => <tr key={activity.activityId}><td>{formatDate(activity.updateDate, true)}</td><td>{activity.processName || processes.find((p) => p.processId === activity.processId)?.processName || "Not provided"}</td><td>{activity.phase}</td><td>{activity.updatedBy}</td><td>{activity.previousStatus}</td><td>{activity.newStatus}</td><td>{activity.nextAction}</td><td>{activity.waitingFor}</td><td>{activity.blocker}</td><td>{formatDate(activity.dueDate)}</td></tr>)}</tbody></table></div></Panel>}
     </div>
   );
 }
@@ -566,7 +569,7 @@ function ReportsPage({ processes, allProcesses }: { processes: Process[]; allPro
       </Toolbar>
       {["Executive Summary", "Weekly Status Report", "Delayed Processes Report", "Blockers Report", "Owner Workload Report", "Stage Bottleneck Report", "Process Health Report", "Department Progress Report"].map((title) => (
         <Panel key={title} title={title}>
-          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Completed: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map((p) => p.processId).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
+          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Completed: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map(processLabel).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
         </Panel>
       ))}
     </div>
@@ -710,11 +713,11 @@ function PhaseStep({ phase }: { phase: Process["phases"][number] }) {
 }
 
 function ActivityItem({ activity }: { activity: Activity }) {
-  return <article className="activity-item"><span>{formatDate(activity.updateDate, true)}</span><strong>{activity.processId || activity.processName}</strong><p>{activity.updateDescription || "Not provided"}</p><small>{display(activity.updatedBy)} · {activity.previousStatus || "Not provided"} → {activity.newStatus || "Not provided"} · Waiting for {display(activity.waitingFor)}</small></article>;
+  return <article className="activity-item"><span>{formatDate(activity.updateDate, true)}</span><strong>{display(activity.processName)}</strong><p>{activity.updateDescription || "Not provided"}</p><small>{display(activity.updatedBy)} · {activity.previousStatus || "Not provided"} → {activity.newStatus || "Not provided"} · Waiting for {display(activity.waitingFor)}</small></article>;
 }
 
 function ProcessMiniList({ processes }: { processes: Process[] }) {
-  return processes.length ? <ul className="mini-list">{processes.slice(0, 10).map((process) => <li key={process.processId}><strong>{process.processId}</strong><span>{process.processName}</span><Badge value={process.health} type="health" /></li>)}</ul> : <p>Insufficient matching data in the uploaded workbook.</p>;
+  return processes.length ? <ul className="mini-list">{processes.slice(0, 10).map((process) => <li key={process.processId}><strong>{processLabel(process)}</strong><Badge value={process.health} type="health" /></li>)}</ul> : <p>Insufficient matching data in the uploaded workbook.</p>;
 }
 
 function ValidationPreview({ validation }: { validation: ValidationResult }) {
