@@ -44,24 +44,12 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_TRACKER_FILE, importDefaultExcel, importExcel, readWorkbook, validateWorkbook } from "./data/importExcel";
 import { clearActiveProject, getActiveProject, saveActiveProject } from "./data/storage";
 import { Activity, FilterState, Process, ProjectData, ValidationResult } from "./data/types";
 import { applyFilters, defaultFilters, uniqueValues } from "./utils/filters";
-import { bottlenecks, buildInsights, calculateMetrics, groupCount, isDelayed, needsAttention, staleDays } from "./utils/calculations";
+import { bottlenecks, buildInsights, calculateMetrics, isDelayed, needsAttention, staleDays } from "./utils/calculations";
 import { formatDate } from "./utils/date";
 import { downloadCsv, downloadExcel, downloadPdf, printReport } from "./utils/exporters";
 
@@ -89,8 +77,6 @@ const navItems: { page: Page; label: string; icon: typeof Home }[] = [
   { page: "upload", label: "Upload Excel", icon: Upload },
   { page: "settings", label: "Settings", icon: Settings },
 ];
-
-const chartColors = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#64748b", "#8b5cf6", "#0f766e", "#ea580c"];
 
 function display(value?: string | number | boolean) {
   if (value === undefined || value === null || value === "") return "Not provided";
@@ -280,18 +266,6 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
   const overallProgress = data.overallProgress ?? metrics.completion;
   const bottle = bottlenecks(data.processes);
   const insights = buildInsights(data.processes);
-  const charts = [
-    { title: "Processes by Status", data: groupCount(data.processes, (p) => p.overallStatus), filter: "statuses" as keyof FilterState },
-    { title: "Processes by Current Stage", data: groupCount(data.processes, (p) => p.currentStage), filter: "stages" as keyof FilterState },
-    { title: "Processes by Health", data: groupCount(data.processes, (p) => p.health), filter: "health" as keyof FilterState },
-    { title: "Processes by Priority", data: groupCount(data.processes, (p) => p.priority), filter: "priorities" as keyof FilterState },
-    { title: "Processes by Department", data: groupCount(data.processes, (p) => p.department), filter: "departments" as keyof FilterState },
-    { title: "Processes by Current Owner", data: groupCount(data.processes, (p) => p.currentOwner), filter: "owners" as keyof FilterState },
-    { title: "Processes by Waiting For", data: groupCount(data.processes, (p) => p.waitingFor), filter: "waitingFor" as keyof FilterState },
-    { title: "Delayed Processes by Delay Reason", data: groupCount(data.processes.filter(isDelayed), (p) => p.delayReason), filter: "delayed" as keyof FilterState },
-    { title: "Blockers by Responsible Team", data: groupCount(data.processes.filter((p) => p.blocked), (p) => p.waitingFor), filter: "waitingFor" as keyof FilterState },
-    { title: "Workload by Owner", data: groupCount(data.processes, (p) => p.currentOwner || p.responsibility), filter: "owners" as keyof FilterState },
-  ];
   return (
     <div className="page stack">
       <section className="kpi-grid">
@@ -337,10 +311,6 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
             ))}
           </div>
         </Panel>
-      </section>
-
-      <section className="chart-grid">
-        {charts.map((chart, index) => <ChartCard key={chart.title} title={chart.title} data={chart.data} variant={index % 2 ? "bar" : "pie"} onClick={(value) => chart.filter === "delayed" ? setFilters({ ...filters, delayed: "yes" }) : applyChartFilter(chart.filter, value)} />)}
       </section>
 
       <Panel title="Project Bottlenecks" subtitle="Calculated from normalized uploaded Excel data.">
@@ -678,14 +648,6 @@ function MultiSelect({ label, values, selected, onChange }: { label: string; val
 
 function Kpi({ title, value, percent, icon: Icon, tone = "blue", onClick }: { title: string; value: string | number; percent?: number; icon: typeof Home; tone?: string; onClick?: () => void }) {
   return <button className={`kpi ${tone}`} onClick={onClick}><Icon size={20} /><span>{title}</span><strong>{value}</strong>{percent !== undefined && <small>{pct(percent)}</small>}</button>;
-}
-
-function ChartCard({ title, data, variant, onClick }: { title: string; data: { name: string; value: number }[]; variant: "pie" | "bar"; onClick: (value: string) => void }) {
-  return (
-    <Panel title={title} className="chart-card">
-      {data.length ? <ResponsiveContainer width="100%" height={230}>{variant === "pie" ? <PieChart><Pie data={data} dataKey="value" nameKey="name" innerRadius={48} outerRadius={82} onClick={(entry: any) => onClick(entry.name)}>{data.map((_, index) => <Cell key={index} fill={chartColors[index % chartColors.length]} />)}</Pie><Tooltip /></PieChart> : <BarChart data={data} layout="vertical" margin={{ left: 8, right: 12 }}><CartesianGrid horizontal={false} strokeDasharray="3 3" /><XAxis type="number" allowDecimals={false} /><YAxis dataKey="name" type="category" width={110} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="value" radius={[0, 8, 8, 0]} onClick={(entry: any) => onClick(entry.name)}>{data.map((_, index) => <Cell key={index} fill={chartColors[index % chartColors.length]} />)}</Bar></BarChart>}</ResponsiveContainer> : <EmptyState title="Insufficient data" compact icon={BarChart3} />}
-    </Panel>
-  );
 }
 
 function Badge({ value, type }: { value: string; type: "status" | "health" | "priority" | "blocked" }) {
