@@ -2,7 +2,7 @@ import * as XLSX from "xlsx";
 import { Activity, ImportError, ImportWarning, Phase, Process, ProjectData, ValidationResult } from "./types";
 import { toIsoDate } from "../utils/date";
 
-const requiredSheets = ["Project Tracker", "Settings", "Activity Log"];
+const requiredSheets = ["Project Tracker", "Settings"];
 const phaseNames = ["Assessment", "PDD Share", "PDD Approval", "Development", "UAT", "Go Live"];
 const validPriorities = new Set(["", "Critical", "High", "Medium", "Low"]);
 const validBlocked = new Set(["", "Yes", "No"]);
@@ -17,16 +17,49 @@ function normalizeKey(value: unknown): string {
     .toLowerCase();
 }
 
+function canonicalHeader(value: unknown): string {
+  const key = normalizeKey(value);
+  const aliases: Record<string, string> = {
+    "task id": "process id",
+    infiermint: "process",
+    "infiermint / phase": "process / phase",
+  };
+  return aliases[key] || key;
+}
+
+function canonicalPhase(value: unknown): string {
+  const phase = String(value ?? "").replace(/\s+/g, " ").trim();
+  const aliases: Record<string, string> = {
+    "pdd approve": "PDD Approval",
+  };
+  return aliases[normalizeKey(phase)] || phase;
+}
+
+function findHeaderRow(rows: unknown[][], sheetName: string): number {
+  if (sheetName !== "Project Tracker") return 0;
+  const index = rows.findIndex((row) => {
+    const headers = row.map(canonicalHeader);
+    return headers.includes("process / phase") && headers.includes("status");
+  });
+  return index >= 0 ? index : 0;
+}
+
 function readSheet(workbook: XLSX.WorkBook, sheetName: string): Row[] {
   const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
-  return rows.map((row) => {
-    const normalized: Row = {};
-    Object.entries(row).forEach(([key, value]) => {
-      normalized[normalizeKey(key)] = value;
-    });
-    return normalized;
-  });
+  const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
+  const headerIndex = findHeaderRow(rawRows, sheetName);
+  const headers = (rawRows[headerIndex] || []).map(canonicalHeader);
+  return rawRows
+    .slice(headerIndex + 1)
+    .map((values) => {
+      const normalized: Row = {};
+      headers.forEach((key, index) => {
+        if (key) normalized[key] = values[index] ?? "";
+      });
+      return normalized;
+    })
+    .filter((row) => Object.values(row).some((value) => String(value ?? "").trim()))
+    .filter((row) => canonicalHeader(text(row, "Process ID")) !== "process id" && canonicalHeader(text(row, "Process / Phase")) !== "process / phase");
 }
 
 function text(row: Row, ...keys: string[]): string {
@@ -53,6 +86,10 @@ function dateValue(row: Row, ...keys: string[]) {
   return undefined;
 }
 
+function phaseValue(row: Row): string {
+  return canonicalPhase(text(row, "Process / Phase", "Phase"));
+}
+
 function blockedValue(row: Row): boolean {
   return text(row, "Blocked").toLowerCase() === "yes";
 }
@@ -67,7 +104,7 @@ function currentStage(phases: Phase[], status: string): string {
 
 function mapPhase(row: Row): Phase {
   return {
-    phaseName: text(row, "Process / Phase", "Phase"),
+    phaseName: phaseValue(row),
     responsibility: text(row, "Responsibility"),
     status: text(row, "Status"),
     progress: numberValue(row, "Progress"),
@@ -88,11 +125,17 @@ function mapPhase(row: Row): Phase {
   };
 }
 
-function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWarning[]): Process {
-  const processId = text(row, "Process ID") || `RPA-${String(index + 1).padStart(3, "0")}`;
-  if (!text(row, "Process ID")) {
-    warnings.push({ code: "generated-process-id", message: `Generated a display Process ID for row ${index + 1} because Excel was blank.` });
+function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWarning[], usedProcessIds: Set<string>): Process {
+  let processId = text(row, "Process ID");
+  if (!processId) {
+    let generatedIndex = index + 1;
+    do {
+      processId = `AUTO-${String(generatedIndex).padStart(3, "0")}`;
+      generatedIndex += 1;
+    } while (usedProcessIds.has(processId));
+    warnings.push({ code: "generated-process-id", message: `Generated an internal Process ID for process ${index + 1} because Excel was blank.` });
   }
+  usedProcessIds.add(processId);
   const status = text(row, "Status");
   const plannedFinish = dateValue(row, "Finish", "Planned Finish");
   const actualFinish = dateValue(row, "Actual Finish");
@@ -165,8 +208,8 @@ export function validateWorkbook(workbook: XLSX.WorkBook, fileName: string, uplo
     if (!headers.includes(header)) errors.push({ code: "missing-column", message: `Missing required Project Tracker column: ${header}` });
   });
 
-  const processRows = rows.filter((row) => text(row, "Process / Phase") === "Process Summary");
-  const phaseRows = rows.filter((row) => phaseNames.includes(text(row, "Process / Phase")));
+  const processRows = rows.filter((row) => phaseValue(row) === "Process Summary");
+  const phaseRows = rows.filter((row) => phaseNames.includes(phaseValue(row)));
   const ids = processRows.map((row) => text(row, "Process ID")).filter(Boolean);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   if (duplicate) errors.push({ code: "duplicate-process-id", message: `Duplicate Process ID found: ${duplicate}` });
@@ -190,18 +233,19 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
   const warnings = [...validation.warnings];
   const rows = readSheet(workbook, "Project Tracker");
   const processes: Process[] = [];
+  const usedProcessIds = new Set(rows.map((row) => text(row, "Process ID")).filter(Boolean));
   let currentSummary: Row | null = null;
   let currentPhases: Phase[] = [];
 
   const flush = () => {
     if (!currentSummary) return;
-    processes.push(mapProcess(currentSummary, currentPhases, processes.length, warnings));
+    processes.push(mapProcess(currentSummary, currentPhases, processes.length, warnings, usedProcessIds));
     currentSummary = null;
     currentPhases = [];
   };
 
   rows.forEach((row) => {
-    const phase = text(row, "Process / Phase");
+    const phase = phaseValue(row);
     if (phase === "Process Summary") {
       flush();
       currentSummary = row;
