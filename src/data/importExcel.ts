@@ -80,6 +80,18 @@ function numberValue(row: Row, ...keys: string[]): number {
   return Number.isFinite(value) ? value : 0;
 }
 
+function progressValue(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return undefined;
+    return value > 1 ? value / 100 : value;
+  }
+  const raw = String(value).trim();
+  if (!raw) return undefined;
+  const normalized = raw.endsWith("%") ? Number(raw.replace("%", "")) / 100 : Number(raw);
+  return Number.isFinite(normalized) ? (normalized > 1 ? normalized / 100 : normalized) : undefined;
+}
+
 function dateValue(row: Row, ...keys: string[]) {
   for (const key of keys) {
     const iso = toIsoDate(row[normalizeKey(key)]);
@@ -237,6 +249,21 @@ function countInfrastructureActivities(rows: Row[]): number {
   return count;
 }
 
+function readDashboardOverallProgress(workbook: XLSX.WorkBook): number | undefined {
+  const sheet = workbook.Sheets.Dashboard;
+  if (!sheet?.["!ref"]) return undefined;
+  const range = XLSX.utils.decode_range(sheet["!ref"]);
+  for (let row = range.s.r; row <= range.e.r; row += 1) {
+    for (let col = range.s.c; col <= range.e.c; col += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })];
+      if (normalizeKey(cell?.v) !== "overall progress") continue;
+      const valueCell = sheet[XLSX.utils.encode_cell({ r: row + 1, c: col })];
+      return progressValue(valueCell?.v) ?? progressValue(valueCell?.w);
+    }
+  }
+  return undefined;
+}
+
 export async function readWorkbook(file: File | ArrayBuffer): Promise<XLSX.WorkBook> {
   const buffer = file instanceof File ? await file.arrayBuffer() : file;
   return XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
@@ -323,6 +350,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
     projectName: "RPA Project Control Center",
     uploadedFileName: fileName,
     uploadedAt,
+    overallProgress: readDashboardOverallProgress(workbook),
     totalProcesses: processes.length,
     processes,
     activities: [...infrastructureActivities, ...mapActivities(readSheet(workbook, "Activity Log"))],

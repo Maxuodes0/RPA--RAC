@@ -83,6 +83,7 @@ export interface ProjectData {
   projectName: string;
   uploadedFileName: string;
   uploadedAt: string;
+  overallProgress?: number;
   totalProcesses: number;
   processes: Process[];
   activities: Activity[];

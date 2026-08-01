@@ -239,7 +239,7 @@ export function App() {
             {page === "kanban" && <KanbanPage processes={filtered} openProcess={openProcess} />}
             {page === "blockers" && <BlockersPage processes={filtered} openProcess={openProcess} />}
             {page === "activity" && <ActivityPage activities={data.activities} processes={processes} />}
-            {page === "reports" && <ReportsPage processes={filtered} allProcesses={processes} activities={data.activities} />}
+            {page === "reports" && <ReportsPage processes={filtered} allProcesses={processes} activities={data.activities} overallProgress={data.overallProgress} />}
             {page === "upload" && <UploadPage current={data} onImported={setData} />}
             {page === "settings" && <SettingsPage data={data} reset={async () => { await clearActiveProject(); window.location.reload(); }} />}
             {page === "not-found" && <NotFound />}
@@ -277,6 +277,7 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
   const metrics = calculateMetrics(data.processes, data.activities);
   const attention = data.processes.filter(needsAttention);
   const infrastructureActivities = data.activities.filter((activity) => activity.processId === "INFRA");
+  const overallProgress = data.overallProgress ?? metrics.completion;
   const bottle = bottlenecks(data.processes);
   const insights = buildInsights(data.processes);
   const charts = [
@@ -301,7 +302,7 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
         <Kpi title="Delayed" value={metrics.delayed} icon={AlertTriangle} tone="red" onClick={() => setFilters({ ...filters, delayed: "yes" })} />
         <Kpi title="Blocked" value={metrics.blocked} icon={Lock} tone="red" onClick={() => setFilters({ ...filters, blocked: "yes" })} />
         <Kpi title="At Risk" value={metrics.atRisk} icon={ShieldAlert} tone="amber" onClick={() => applyChartFilter("health", "Amber")} />
-        <Kpi title="Overall Completion" value={pct(metrics.completion)} icon={Gauge} />
+        <Kpi title="Overall Completion" value={pct(overallProgress)} icon={Gauge} />
         <Kpi title="Infra Activities" value={infrastructureActivities.length} icon={Server} />
       </section>
 
@@ -574,8 +575,9 @@ function ActivityPage({ activities, processes }: { activities: Activity[]; proce
   );
 }
 
-function ReportsPage({ processes, allProcesses, activities }: { processes: Process[]; allProcesses: Process[]; activities: Activity[] }) {
+function ReportsPage({ processes, allProcesses, activities, overallProgress }: { processes: Process[]; allProcesses: Process[]; activities: Activity[]; overallProgress?: number }) {
   const metrics = calculateMetrics(allProcesses, activities);
+  const projectProgress = overallProgress ?? metrics.completion;
   const bottle = bottlenecks(allProcesses);
   const delayed = allProcesses.filter(isDelayed);
   const blocked = allProcesses.filter((process) => process.blocked);
@@ -589,7 +591,7 @@ function ReportsPage({ processes, allProcesses, activities }: { processes: Proce
       </Toolbar>
       {["Executive Summary", "Weekly Status Report", "Delayed Processes Report", "Blockers Report", "Owner Workload Report", "Stage Bottleneck Report", "Process Health Report", "Department Progress Report"].map((title) => (
         <Panel key={title} title={title}>
-          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Overall project completion including infrastructure: {pct(metrics.completion)}. Completed processes: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map(processLabel).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
+          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Overall project completion from the Excel Dashboard sheet: {pct(projectProgress)}. Completed processes: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map(processLabel).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
         </Panel>
       ))}
     </div>
