@@ -37,10 +37,12 @@ function canonicalPhase(value: unknown): string {
 }
 
 function findHeaderRow(rows: unknown[][], sheetName: string): number {
-  if (sheetName !== "Project Tracker") return 0;
+  if (!["Project Tracker", "Process Summary"].includes(sheetName)) return 0;
   const index = rows.findIndex((row) => {
     const headers = row.map(canonicalHeader);
-    return headers.includes("process / phase") && headers.includes("status");
+    return sheetName === "Project Tracker"
+      ? headers.includes("process / phase") && headers.includes("status")
+      : headers.includes("process") && headers.includes("status") && headers.includes("progress");
   });
   return index >= 0 ? index : 0;
 }
@@ -121,6 +123,12 @@ function blockedValue(row: Row): boolean {
   return text(row, "Blocked").toLowerCase() === "yes";
 }
 
+function processNameValue(row: Row, summaryRow?: Row): string {
+  const summaryName = text(summaryRow || {}, "Process", "Process Name");
+  const trackerName = text(row, "Process", "Process Name");
+  return summaryName || trackerName || "Not provided";
+}
+
 function currentStage(phases: Phase[], status: string): string {
   const active = phases.find((phase) => ["In Progress", "On Hold"].includes(phase.status));
   if (active) return active.phaseName;
@@ -152,7 +160,7 @@ function mapPhase(row: Row): Phase {
   };
 }
 
-function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWarning[], usedProcessIds: Set<string>): Process {
+function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWarning[], usedProcessIds: Set<string>, summaryRow?: Row): Process {
   let processId = text(row, "Process ID");
   if (!processId) {
     let generatedIndex = index + 1;
@@ -163,22 +171,22 @@ function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWa
     warnings.push({ code: "generated-process-id", message: `Generated an internal Process ID for process ${index + 1} because Excel was blank.` });
   }
   usedProcessIds.add(processId);
-  const status = text(row, "Status");
-  const plannedFinish = dateValue(row, "Finish", "Planned Finish");
+  const status = text(summaryRow || {}, "Status") || text(row, "Status");
+  const plannedFinish = dateValue(summaryRow || {}, "Finish", "Planned Finish") || dateValue(row, "Finish", "Planned Finish");
   const actualFinish = dateValue(row, "Actual Finish");
   return {
     processId,
-    processName: text(row, "Process", "Process Name") || "Not provided",
+    processName: processNameValue(row, summaryRow),
     department: text(row, "Department"),
     businessOwner: text(row, "Business Owner"),
     currentStage: currentStage(phases, status),
     overallStatus: status || "Not provided",
-    progress: numberValue(row, "Progress"),
+    progress: numberValue(summaryRow || {}, "Progress") || numberValue(row, "Progress"),
     priority: text(row, "Priority") || "Medium",
-    health: text(row, "Health"),
-    currentOwner: text(row, "Current Owner"),
+    health: text(summaryRow || {}, "Health") || text(row, "Health"),
+    currentOwner: text(row, "Current Owner") || text(summaryRow || {}, "Developer") || text(row, "Developer"),
     waitingFor: text(row, "Waiting For"),
-    plannedStart: dateValue(row, "Start", "Planned Start"),
+    plannedStart: dateValue(summaryRow || {}, "Effective Start", "Auto Start", "Start", "Planned Start") || dateValue(row, "Start", "Planned Start"),
     plannedFinish,
     actualStart: dateValue(row, "Actual Start"),
     actualFinish,
@@ -218,6 +226,8 @@ function mapActivities(rows: Row[]): Activity[] {
 
 function mapInfrastructureActivity(parentRow: Row, row: Row, index: number): Activity {
   const status = text(row, "Status");
+  const blocker = text(row, "Blocker Description") || text(row, "Delay Reason") || text(row, "Blocked");
+  const description = [phaseValue(row), status ? `is ${status}` : "", blocker && blocker !== "No" ? `- ${blocker}` : ""].filter(Boolean).join(" ");
   return {
     activityId: `INFRA-${String(index + 1).padStart(3, "0")}`,
     processId: "INFRA",
@@ -228,10 +238,10 @@ function mapInfrastructureActivity(parentRow: Row, row: Row, index: number): Act
     updatedBy: text(row, "Updated By"),
     previousStatus: "",
     newStatus: status,
-    updateDescription: `${phaseValue(row)} is ${status || "Not provided"}.`,
+    updateDescription: description || `${phaseValue(row)} is Not provided.`,
     nextAction: text(row, "Next Action"),
     waitingFor: text(row, "Waiting For"),
-    blocker: text(row, "Blocked"),
+    blocker,
     dueDate: dateValue(row, "Finish", "Planned Finish"),
   };
 }
@@ -307,6 +317,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
   }
   const warnings = [...validation.warnings];
   const rows = readSheet(workbook, "Project Tracker");
+  const summaryRows = readSheet(workbook, "Process Summary").filter((row) => text(row, "Process"));
   const processes: Process[] = [];
   const infrastructureActivities: Activity[] = [];
   const usedProcessIds = new Set(rows.map((row) => text(row, "Process ID")).filter(Boolean));
@@ -316,7 +327,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
 
   const flush = () => {
     if (!currentSummary) return;
-    processes.push(mapProcess(currentSummary, currentPhases, processes.length, warnings, usedProcessIds));
+    processes.push(mapProcess(currentSummary, currentPhases, processes.length, warnings, usedProcessIds, summaryRows[processes.length]));
     currentSummary = null;
     currentPhases = [];
   };
