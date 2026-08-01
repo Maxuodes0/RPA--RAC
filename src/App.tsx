@@ -56,7 +56,7 @@ import {
   YAxis,
 } from "recharts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { importDefaultExcel, importExcel, readWorkbook, validateWorkbook } from "./data/importExcel";
+import { DEFAULT_TRACKER_FILE, importDefaultExcel, importExcel, readWorkbook, validateWorkbook } from "./data/importExcel";
 import { clearActiveProject, getActiveProject, saveActiveProject } from "./data/storage";
 import { Activity, FilterState, Process, ProjectData, ValidationResult } from "./data/types";
 import { applyFilters, defaultFilters, uniqueValues } from "./utils/filters";
@@ -137,11 +137,11 @@ export function App() {
     async function load() {
       try {
         const stored = await getActiveProject();
-        if (stored) {
+        if (stored && stored.uploadedFileName !== DEFAULT_TRACKER_FILE) {
           setData(stored);
         } else {
           const initial = await importDefaultExcel();
-          await saveActiveProject(initial);
+          await saveActiveProject(initial, stored);
           setData(initial);
         }
       } catch (loadError) {

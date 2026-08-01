@@ -2,6 +2,8 @@ import * as XLSX from "xlsx";
 import { Activity, ImportError, ImportWarning, Phase, Process, ProjectData, ValidationResult } from "./types";
 import { toIsoDate } from "../utils/date";
 
+export const DEFAULT_TRACKER_FILE = "RPA_Project_Tracker_Web_Ready.xlsx";
+
 const requiredSheets = ["Project Tracker", "Settings"];
 const validPriorities = new Set(["", "Critical", "High", "Medium", "Low"]);
 const validBlocked = new Set(["", "Yes", "No"]);
@@ -90,9 +92,17 @@ function phaseValue(row: Row): string {
   return canonicalPhase(text(row, "Process / Phase", "Phase"));
 }
 
+function isProcessSummary(row: Row): boolean {
+  return phaseValue(row) === "Process Summary";
+}
+
 function isPhaseRow(row: Row): boolean {
   const phase = phaseValue(row);
   return Boolean(phase) && phase !== "Process Summary";
+}
+
+function hasProcessId(row: Row): boolean {
+  return Boolean(text(row, "Process ID"));
 }
 
 function blockedValue(row: Row): boolean {
@@ -194,6 +204,38 @@ function mapActivities(rows: Row[]): Activity[] {
     }));
 }
 
+function mapInfrastructureActivity(parentRow: Row, row: Row, index: number): Activity {
+  const status = text(row, "Status");
+  return {
+    activityId: `INFRA-${String(index + 1).padStart(3, "0")}`,
+    processId: "INFRA",
+    processName: text(parentRow, "Process", "Process Name") || "Infrastructure",
+    phase: phaseValue(row),
+    updateDate: dateValue(row, "Last Updated"),
+    updatedBy: text(row, "Updated By"),
+    previousStatus: "",
+    newStatus: status,
+    updateDescription: `${phaseValue(row)} is ${status || "Not provided"}.`,
+    nextAction: text(row, "Next Action"),
+    waitingFor: text(row, "Waiting For"),
+    blocker: text(row, "Blocked"),
+    dueDate: dateValue(row, "Finish", "Planned Finish"),
+  };
+}
+
+function countInfrastructureActivities(rows: Row[]): number {
+  let inInfrastructureBlock = false;
+  let count = 0;
+  rows.forEach((row) => {
+    if (isProcessSummary(row)) {
+      inInfrastructureBlock = !hasProcessId(row);
+    } else if (inInfrastructureBlock && isPhaseRow(row)) {
+      count += 1;
+    }
+  });
+  return count;
+}
+
 export async function readWorkbook(file: File | ArrayBuffer): Promise<XLSX.WorkBook> {
   const buffer = file instanceof File ? await file.arrayBuffer() : file;
   return XLSX.read(buffer, { type: "array", cellDates: true, raw: true });
@@ -213,7 +255,7 @@ export function validateWorkbook(workbook: XLSX.WorkBook, fileName: string, uplo
     if (!headers.includes(header)) errors.push({ code: "missing-column", message: `Missing required Project Tracker column: ${header}` });
   });
 
-  const processRows = rows.filter((row) => phaseValue(row) === "Process Summary");
+  const processRows = rows.filter((row) => isProcessSummary(row) && hasProcessId(row));
   const phaseRows = rows.filter(isPhaseRow);
   const ids = processRows.map((row) => text(row, "Process ID")).filter(Boolean);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
@@ -227,7 +269,7 @@ export function validateWorkbook(workbook: XLSX.WorkBook, fileName: string, uplo
   });
 
   const activities = workbook.SheetNames.includes("Activity Log") ? mapActivities(readSheet(workbook, "Activity Log")) : [];
-  return { ok: errors.length === 0, errors, warnings, processCount: processRows.length, phaseCount: phaseRows.length, activityCount: activities.length, fileName, uploadedAt };
+  return { ok: errors.length === 0, errors, warnings, processCount: processRows.length, phaseCount: phaseRows.length, activityCount: activities.length + countInfrastructureActivities(rows), fileName, uploadedAt };
 }
 
 export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, uploadedAt = new Date().toISOString()): ProjectData {
@@ -238,9 +280,11 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
   const warnings = [...validation.warnings];
   const rows = readSheet(workbook, "Project Tracker");
   const processes: Process[] = [];
+  const infrastructureActivities: Activity[] = [];
   const usedProcessIds = new Set(rows.map((row) => text(row, "Process ID")).filter(Boolean));
   let currentSummary: Row | null = null;
   let currentPhases: Phase[] = [];
+  let currentInfrastructureSummary: Row | null = null;
 
   const flush = () => {
     if (!currentSummary) return;
@@ -251,12 +295,22 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
 
   rows.forEach((row) => {
     const phase = phaseValue(row);
-    if (phase === "Process Summary") {
+    if (isProcessSummary(row)) {
       flush();
-      currentSummary = row;
+      if (hasProcessId(row)) {
+        currentSummary = row;
+        currentInfrastructureSummary = null;
+      } else {
+        currentSummary = null;
+        currentInfrastructureSummary = row;
+      }
     } else if (isPhaseRow(row)) {
       if (!currentSummary) {
-        warnings.push({ code: "orphan-phase", message: `Phase "${phase}" could not be linked to a parent process.` });
+        if (currentInfrastructureSummary) {
+          infrastructureActivities.push(mapInfrastructureActivity(currentInfrastructureSummary, row, infrastructureActivities.length));
+        } else {
+          warnings.push({ code: "orphan-phase", message: `Phase "${phase}" could not be linked to a parent process.` });
+        }
       } else {
         currentPhases.push(mapPhase(row));
       }
@@ -270,7 +324,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
     uploadedAt,
     totalProcesses: processes.length,
     processes,
-    activities: mapActivities(readSheet(workbook, "Activity Log")),
+    activities: [...infrastructureActivities, ...mapActivities(readSheet(workbook, "Activity Log"))],
     warnings,
   };
 }
@@ -284,8 +338,8 @@ export async function importExcel(file: File): Promise<{ validation: ValidationR
 }
 
 export async function importDefaultExcel(): Promise<ProjectData> {
-  const response = await fetch("/data/RPA_Project_Tracker_Web_Ready.xlsx");
+  const response = await fetch(`/data/${DEFAULT_TRACKER_FILE}`);
   if (!response.ok) throw new Error("Default Excel tracker could not be loaded.");
   const workbook = await readWorkbook(await response.arrayBuffer());
-  return normalizeWorkbook(workbook, "RPA_Project_Tracker_Web_Ready.xlsx", new Date().toISOString());
+  return normalizeWorkbook(workbook, DEFAULT_TRACKER_FILE, new Date().toISOString());
 }
