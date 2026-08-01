@@ -23,6 +23,7 @@ import {
   Printer,
   RefreshCcw,
   Search,
+  Server,
   Settings,
   ShieldAlert,
   Sparkles,
@@ -275,6 +276,7 @@ function Topbar({ data, theme, setTheme, search, setSearch }: { data: ProjectDat
 function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter }: { data: ProjectData; filters: FilterState; setFilters: (filters: FilterState) => void; openProcess: (process: Process) => void; applyChartFilter: (key: keyof FilterState, value: string) => void }) {
   const metrics = calculateMetrics(data.processes);
   const attention = data.processes.filter(needsAttention);
+  const infrastructureActivities = data.activities.filter((activity) => activity.processId === "INFRA");
   const bottle = bottlenecks(data.processes);
   const insights = buildInsights(data.processes);
   const charts = [
@@ -300,7 +302,25 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
         <Kpi title="Blocked" value={metrics.blocked} icon={Lock} tone="red" onClick={() => setFilters({ ...filters, blocked: "yes" })} />
         <Kpi title="At Risk" value={metrics.atRisk} icon={ShieldAlert} tone="amber" onClick={() => applyChartFilter("health", "Amber")} />
         <Kpi title="Overall Completion" value={pct(metrics.completion)} icon={Gauge} />
+        <Kpi title="Infra Activities" value={infrastructureActivities.length} icon={Server} />
       </section>
+
+      {!!infrastructureActivities.length && (
+        <Panel title="Infrastructure Activities" subtitle="Tracked separately from the 30 RPA processes.">
+          <div className="infra-grid">
+            {infrastructureActivities.map((activity) => (
+              <article className="infra-item" key={activity.activityId}>
+                <div>
+                  <strong>{display(activity.processName)}</strong>
+                  <span>{display(activity.phase)}</span>
+                </div>
+                <Badge value={activity.newStatus || "Not provided"} type="status" />
+                <small>{formatDate(activity.dueDate)}</small>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       <section className="split-grid">
         <Panel title="Needs Attention" subtitle="Automatically detected from Excel fields and date rules.">
