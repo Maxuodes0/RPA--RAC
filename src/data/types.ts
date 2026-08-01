@@ -57,6 +57,7 @@ export interface Activity {
   processId: string;
   processName: string;
   phase: string;
+  progress?: number;
   updateDate?: string;
   updatedBy: string;
   previousStatus: string;

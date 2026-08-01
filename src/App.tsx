@@ -239,7 +239,7 @@ export function App() {
             {page === "kanban" && <KanbanPage processes={filtered} openProcess={openProcess} />}
             {page === "blockers" && <BlockersPage processes={filtered} openProcess={openProcess} />}
             {page === "activity" && <ActivityPage activities={data.activities} processes={processes} />}
-            {page === "reports" && <ReportsPage processes={filtered} allProcesses={processes} />}
+            {page === "reports" && <ReportsPage processes={filtered} allProcesses={processes} activities={data.activities} />}
             {page === "upload" && <UploadPage current={data} onImported={setData} />}
             {page === "settings" && <SettingsPage data={data} reset={async () => { await clearActiveProject(); window.location.reload(); }} />}
             {page === "not-found" && <NotFound />}
@@ -274,7 +274,7 @@ function Topbar({ data, theme, setTheme, search, setSearch }: { data: ProjectDat
 }
 
 function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter }: { data: ProjectData; filters: FilterState; setFilters: (filters: FilterState) => void; openProcess: (process: Process) => void; applyChartFilter: (key: keyof FilterState, value: string) => void }) {
-  const metrics = calculateMetrics(data.processes);
+  const metrics = calculateMetrics(data.processes, data.activities);
   const attention = data.processes.filter(needsAttention);
   const infrastructureActivities = data.activities.filter((activity) => activity.processId === "INFRA");
   const bottle = bottlenecks(data.processes);
@@ -574,8 +574,8 @@ function ActivityPage({ activities, processes }: { activities: Activity[]; proce
   );
 }
 
-function ReportsPage({ processes, allProcesses }: { processes: Process[]; allProcesses: Process[] }) {
-  const metrics = calculateMetrics(allProcesses);
+function ReportsPage({ processes, allProcesses, activities }: { processes: Process[]; allProcesses: Process[]; activities: Activity[] }) {
+  const metrics = calculateMetrics(allProcesses, activities);
   const bottle = bottlenecks(allProcesses);
   const delayed = allProcesses.filter(isDelayed);
   const blocked = allProcesses.filter((process) => process.blocked);
@@ -589,7 +589,7 @@ function ReportsPage({ processes, allProcesses }: { processes: Process[]; allPro
       </Toolbar>
       {["Executive Summary", "Weekly Status Report", "Delayed Processes Report", "Blockers Report", "Owner Workload Report", "Stage Bottleneck Report", "Process Health Report", "Department Progress Report"].map((title) => (
         <Panel key={title} title={title}>
-          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Completed: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map(processLabel).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
+          {title === "Executive Summary" ? <p>Total number of processes: {metrics.total}. Overall project completion including infrastructure: {pct(metrics.completion)}. Completed processes: {metrics.completed}. In progress: {metrics.inProgress}. Delayed: {metrics.delayed}. Blocked: {metrics.blocked}. Main bottleneck: {bottle.topStage ? bottle.topStage.name : "insufficient data"}. Most common waiting party: {bottle.topWaiting ? bottle.topWaiting.name : "insufficient data"}. Highest-risk processes: {allProcesses.filter(needsAttention).slice(0, 5).map(processLabel).join(", ") || "not available"}.</p> : title.includes("Delayed") ? <ProcessMiniList processes={delayed} /> : title.includes("Blockers") ? <ProcessMiniList processes={blocked} /> : <p>This report is generated only from the uploaded Excel data. Where source fields are blank, the report displays Not provided rather than inventing information.</p>}
         </Panel>
       ))}
     </div>

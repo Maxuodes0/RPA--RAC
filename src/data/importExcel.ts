@@ -211,6 +211,7 @@ function mapInfrastructureActivity(parentRow: Row, row: Row, index: number): Act
     processId: "INFRA",
     processName: text(parentRow, "Process", "Process Name") || "Infrastructure",
     phase: phaseValue(row),
+    progress: numberValue(row, "Progress"),
     updateDate: dateValue(row, "Last Updated"),
     updatedBy: text(row, "Updated By"),
     previousStatus: "",

@@ -1,4 +1,4 @@
-import { DashboardMetrics, Insight, Process } from "../data/types";
+import { Activity, DashboardMetrics, Insight, Process } from "../data/types";
 import { daysBetween, isPast } from "./date";
 
 export function isCompleted(process: Process) {
@@ -27,7 +27,12 @@ export function needsAttention(process: Process) {
   );
 }
 
-export function calculateMetrics(processes: Process[]): DashboardMetrics {
+function activityProgress(activity: Activity) {
+  if (typeof activity.progress === "number") return activity.progress;
+  return String(activity.newStatus).toLowerCase() === "completed" ? 1 : 0;
+}
+
+export function calculateMetrics(processes: Process[], activities: Activity[] = []): DashboardMetrics {
   const total = processes.length;
   const completed = processes.filter(isCompleted).length;
   const inProgress = processes.filter((process) => process.overallStatus === "In Progress").length;
@@ -35,7 +40,10 @@ export function calculateMetrics(processes: Process[]): DashboardMetrics {
   const delayed = processes.filter(isDelayed).length;
   const blocked = processes.filter((process) => process.blocked).length;
   const atRisk = processes.filter((process) => process.health === "Amber" || process.priority === "Critical").length;
-  const completion = total ? processes.reduce((sum, process) => sum + process.progress, 0) / total : 0;
+  const infrastructureActivities = activities.filter((activity) => activity.processId === "INFRA");
+  const workItemCount = total + infrastructureActivities.length;
+  const workProgress = processes.reduce((sum, process) => sum + process.progress, 0) + infrastructureActivities.reduce((sum, activity) => sum + activityProgress(activity), 0);
+  const completion = workItemCount ? workProgress / workItemCount : 0;
   return { total, completed, inProgress, notStarted, delayed, blocked, atRisk, completion };
 }
 
