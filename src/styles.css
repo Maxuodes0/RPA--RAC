@@ -97,12 +97,6 @@ h3 { font-size: 16px; margin-bottom: 6px; }
 .insight.warning span { color: var(--amber); }
 .insight.recommendation span { color: var(--green); }
 .insight p, .insight small { display: block; color: var(--muted); margin: 5px 0 0; }
-.infra-grid { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 10px; }
-.infra-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-strong); }
-.infra-item div { min-width: 0; }
-.infra-item strong, .infra-item span, .infra-item small { display: block; overflow-wrap: anywhere; }
-.infra-item span, .infra-item small { color: var(--muted); margin-top: 4px; }
-.infra-item small { grid-column: 1 / -1; }
 .bottleneck-grid, .settings-grid, .validation-grid { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 12px; }
 .fact { border: 1px solid var(--border); border-radius: 8px; padding: 13px; background: var(--surface-strong); }
 .fact span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; }
@@ -217,7 +211,7 @@ select, input[type="date"] { width: 100%; height: 36px; border: 1px solid var(--
 @media (max-width: 1200px) {
   .topbar { grid-template-columns: 1fr; }
   .topbar-meta { flex-wrap: wrap; }
-  .kpi-grid, .chart-grid, .process-grid, .blocker-grid, .infra-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+  .kpi-grid, .chart-grid, .process-grid, .blocker-grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); }
   .split-grid { grid-template-columns: 1fr; }
   .filters-grid { grid-template-columns: repeat(3, minmax(150px, 1fr)); }
 }
@@ -231,7 +225,7 @@ select, input[type="date"] { width: 100%; height: 36px; border: 1px solid var(--
   .nav-item { flex: 0 0 auto; }
   .main { padding: 16px 14px 92px; }
   .topbar { position: static; }
-  .kpi-grid, .chart-grid, .process-grid, .process-grid.compact, .blocker-grid, .detail-grid, .bottleneck-grid, .settings-grid, .validation-grid, .infra-grid { grid-template-columns: 1fr; }
+  .kpi-grid, .chart-grid, .process-grid, .process-grid.compact, .blocker-grid, .detail-grid, .bottleneck-grid, .settings-grid, .validation-grid { grid-template-columns: 1fr; }
   .filters-grid { grid-template-columns: 1fr; }
   .attention-item { grid-template-columns: 1fr; }
   .phase-step dl { grid-template-columns: 1fr; }

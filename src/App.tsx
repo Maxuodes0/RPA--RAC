@@ -306,23 +306,6 @@ function OverviewPage({ data, filters, setFilters, openProcess, applyChartFilter
         <Kpi title="Infra Activities" value={infrastructureActivities.length} icon={Server} />
       </section>
 
-      {!!infrastructureActivities.length && (
-        <Panel title="Infrastructure Activities" subtitle="Tracked separately from the 30 RPA processes.">
-          <div className="infra-grid">
-            {infrastructureActivities.map((activity) => (
-              <article className="infra-item" key={activity.activityId}>
-                <div>
-                  <strong>{display(activity.processName)}</strong>
-                  <span>{display(activity.phase)}</span>
-                </div>
-                <Badge value={activity.newStatus || "Not provided"} type="status" />
-                <small>{formatDate(activity.dueDate)}</small>
-              </article>
-            ))}
-          </div>
-        </Panel>
-      )}
-
       <section className="split-grid">
         <Panel title="Needs Attention" subtitle="Automatically detected from Excel fields and date rules.">
           {attention.length ? (
