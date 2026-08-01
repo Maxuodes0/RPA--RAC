@@ -3,7 +3,6 @@ import { Activity, ImportError, ImportWarning, Phase, Process, ProjectData, Vali
 import { toIsoDate } from "../utils/date";
 
 const requiredSheets = ["Project Tracker", "Settings"];
-const phaseNames = ["Assessment", "PDD Share", "PDD Approval", "Development", "UAT", "Go Live"];
 const validPriorities = new Set(["", "Critical", "High", "Medium", "Low"]);
 const validBlocked = new Set(["", "Yes", "No"]);
 
@@ -46,6 +45,7 @@ function findHeaderRow(rows: unknown[][], sheetName: string): number {
 
 function readSheet(workbook: XLSX.WorkBook, sheetName: string): Row[] {
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) return [];
   const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
   const headerIndex = findHeaderRow(rawRows, sheetName);
   const headers = (rawRows[headerIndex] || []).map(canonicalHeader);
@@ -88,6 +88,11 @@ function dateValue(row: Row, ...keys: string[]) {
 
 function phaseValue(row: Row): string {
   return canonicalPhase(text(row, "Process / Phase", "Phase"));
+}
+
+function isPhaseRow(row: Row): boolean {
+  const phase = phaseValue(row);
+  return Boolean(phase) && phase !== "Process Summary";
 }
 
 function blockedValue(row: Row): boolean {
@@ -209,7 +214,7 @@ export function validateWorkbook(workbook: XLSX.WorkBook, fileName: string, uplo
   });
 
   const processRows = rows.filter((row) => phaseValue(row) === "Process Summary");
-  const phaseRows = rows.filter((row) => phaseNames.includes(phaseValue(row)));
+  const phaseRows = rows.filter(isPhaseRow);
   const ids = processRows.map((row) => text(row, "Process ID")).filter(Boolean);
   const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
   if (duplicate) errors.push({ code: "duplicate-process-id", message: `Duplicate Process ID found: ${duplicate}` });
@@ -249,7 +254,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
     if (phase === "Process Summary") {
       flush();
       currentSummary = row;
-    } else if (phaseNames.includes(phase)) {
+    } else if (isPhaseRow(row)) {
       if (!currentSummary) {
         warnings.push({ code: "orphan-phase", message: `Phase "${phase}" could not be linked to a parent process.` });
       } else {
