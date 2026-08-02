@@ -60,6 +60,9 @@ export interface Activity {
   processName: string;
   phase: string;
   progress?: number;
+  durationDays?: number;
+  plannedStart?: string;
+  plannedFinish?: string;
   updateDate?: string;
   updatedBy: string;
   previousStatus: string;

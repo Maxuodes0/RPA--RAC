@@ -1,6 +1,16 @@
 import { Activity, DashboardMetrics, Insight, Process } from "../data/types";
 import { daysBetween, isPast } from "./date";
 
+const DAY_MS = 86_400_000;
+
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizedStatus(value: string) {
+  return String(value || "").trim().toLowerCase();
+}
+
 export function isCompleted(process: Process) {
   return String(process.overallStatus).toLowerCase() === "completed" || process.progress >= 1;
 }
@@ -32,6 +42,61 @@ function activityProgress(activity: Activity) {
   return String(activity.newStatus).toLowerCase() === "completed" ? 1 : 0;
 }
 
+function dateSpanDays(start?: string, finish?: string): number {
+  if (!start || !finish) return 0;
+  const startDate = new Date(start);
+  const finishDate = new Date(finish);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(finishDate.getTime())) return 0;
+  return Math.max(1, Math.round((finishDate.getTime() - startDate.getTime()) / DAY_MS) + 1);
+}
+
+function scheduledProgress(start?: string, finish?: string, today = new Date()): number | undefined {
+  if (!start || !finish) return undefined;
+  const startDate = new Date(start);
+  const finishDate = new Date(finish);
+  if (Number.isNaN(startDate.getTime()) || Number.isNaN(finishDate.getTime())) return undefined;
+  if (finishDate <= startDate) return today >= finishDate ? 1 : 0;
+  if (today <= startDate) return 0;
+  if (today >= finishDate) return 1;
+  return clampProgress((today.getTime() - startDate.getTime()) / (finishDate.getTime() - startDate.getTime()));
+}
+
+function statusProgress(status: string, progress?: number) {
+  const normalized = normalizedStatus(status);
+  if (normalized === "completed") return 1;
+  if (normalized === "cancelled") return 0;
+  if (typeof progress === "number" && Number.isFinite(progress) && progress > 0) return clampProgress(progress);
+  return undefined;
+}
+
+function phaseEstimate(process: Process, today = new Date()) {
+  if (!process.phases.length) {
+    return statusProgress(process.overallStatus, process.progress) ?? scheduledProgress(process.plannedStart, process.plannedFinish, today) ?? 0;
+  }
+  let totalDays = 0;
+  let earnedDays = 0;
+  process.phases.forEach((phase) => {
+    const days = phase.durationDays || dateSpanDays(phase.plannedStart, phase.plannedFinish) || 1;
+    const progress = statusProgress(phase.status, phase.progress) ?? scheduledProgress(phase.plannedStart, phase.plannedFinish, today) ?? 0;
+    totalDays += days;
+    earnedDays += days * progress;
+  });
+  return totalDays ? earnedDays / totalDays : 0;
+}
+
+function workItemWeight(process: Process) {
+  const phaseDays = process.phases.reduce((sum, phase) => sum + (phase.durationDays || dateSpanDays(phase.plannedStart, phase.plannedFinish)), 0);
+  return process.durationDays || phaseDays || dateSpanDays(process.plannedStart, process.plannedFinish) || 1;
+}
+
+function infrastructureWeight(activity: Activity) {
+  return activity.durationDays || dateSpanDays(activity.plannedStart, activity.plannedFinish) || 1;
+}
+
+function infrastructureProgress(activity: Activity, today = new Date()) {
+  return statusProgress(activity.newStatus, activity.progress) ?? scheduledProgress(activity.plannedStart, activity.plannedFinish, today) ?? activityProgress(activity);
+}
+
 export function calculateMetrics(processes: Process[], activities: Activity[] = []): DashboardMetrics {
   const total = processes.length;
   const completed = processes.filter(isCompleted).length;
@@ -41,9 +106,26 @@ export function calculateMetrics(processes: Process[], activities: Activity[] = 
   const blocked = processes.filter((process) => process.blocked).length;
   const atRisk = processes.filter((process) => process.health === "Amber" || process.priority === "Critical").length;
   const infrastructureActivities = activities.filter((activity) => activity.processId === "INFRA");
-  const workItemCount = total + infrastructureActivities.length;
-  const workProgress = processes.reduce((sum, process) => sum + process.progress, 0) + infrastructureActivities.reduce((sum, activity) => sum + activityProgress(activity), 0);
-  const completion = workItemCount ? workProgress / workItemCount : 0;
+  const processWork = processes.reduce(
+    (acc, process) => {
+      const weight = workItemWeight(process);
+      acc.weight += weight;
+      acc.earned += weight * phaseEstimate(process);
+      return acc;
+    },
+    { weight: 0, earned: 0 },
+  );
+  const infrastructureWork = infrastructureActivities.reduce(
+    (acc, activity) => {
+      const weight = infrastructureWeight(activity);
+      acc.weight += weight;
+      acc.earned += weight * infrastructureProgress(activity);
+      return acc;
+    },
+    { weight: 0, earned: 0 },
+  );
+  const workWeight = processWork.weight + infrastructureWork.weight;
+  const completion = workWeight ? (processWork.earned + infrastructureWork.earned) / workWeight : 0;
   return { total, completed, inProgress, notStarted, delayed, blocked, atRisk, completion };
 }
 
