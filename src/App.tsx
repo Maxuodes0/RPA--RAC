@@ -368,6 +368,7 @@ function ProcessCard({ process, onClick }: { process: Process; onClick: () => vo
       <dl className="card-meta">
         <dt>Owner</dt><dd>{display(process.currentOwner)}</dd>
         <dt>Waiting For</dt><dd>{display(process.waitingFor)}</dd>
+        <dt>Delivery</dt><dd>{process.durationDays} days</dd>
         <dt>Due</dt><dd>{formatDate(process.dueDate)}</dd>
         <dt>Delay</dt><dd>{process.varianceDays} days</dd>
         <dt>Next Action</dt><dd>{display(process.nextAction)}</dd>
@@ -396,6 +397,7 @@ function ProcessTable({ processes, openProcess }: { processes: Process[]; openPr
     { accessorKey: "currentOwner", header: "Current Owner", cell: (info) => display(info.getValue<string>()) },
     { accessorKey: "waitingFor", header: "Waiting For", cell: (info) => display(info.getValue<string>()) },
     { accessorKey: "blocked", header: "Blocked", cell: (info) => display(info.getValue<boolean>()) },
+    { accessorKey: "durationDays", header: "Delivery Days" },
     { accessorKey: "dueDate", header: "Due Date", cell: (info) => formatDate(info.getValue<string>()) },
     { accessorKey: "varianceDays", header: "Delay Days" },
     { accessorKey: "nextAction", header: "Next Action", cell: (info) => display(info.getValue<string>()) },
@@ -432,11 +434,11 @@ function ProcessDetails({ process, activities }: { process: Process; activities:
     <Panel title={processLabel(process)} subtitle="Process detail page">
       <div className="details-header">
         <Badge value={process.priority} type="priority" /><Badge value={process.overallStatus} type="status" /><Badge value={process.health || "System warning"} type="health" /><Badge value={process.blocked ? "Blocked" : "Not blocked"} type="blocked" />
-        <strong>{pct(process.progress)}</strong><span>{process.currentStage}</span><span>{display(process.currentOwner)}</span><span>{display(process.waitingFor)}</span><span>{formatDate(process.dueDate)}</span><span>{process.varianceDays} delay days</span>
+        <strong>{pct(process.progress)}</strong><span>{process.currentStage}</span><span>{display(process.currentOwner)}</span><span>{display(process.waitingFor)}</span><span>{process.durationDays} delivery days</span><span>{formatDate(process.dueDate)}</span><span>{process.varianceDays} delay days</span>
       </div>
       <div className="detail-grid">
         <DetailSection title="Executive Summary" items={{ "Current status": process.overallStatus, "Current stage": process.currentStage, "Current owner": process.currentOwner, "Waiting for": process.waitingFor, "Reason for delay": process.delayReason, Blocker: process.blockerDescription, "Next action": process.nextAction, "Latest update": formatDate(process.lastUpdated, true), "Business owner": process.businessOwner }} />
-        <DetailSection title="Dates and Performance" items={{ "Planned Start": formatDate(process.plannedStart), "Planned Finish": formatDate(process.plannedFinish), "Actual Start": formatDate(process.actualStart), "Actual Finish": formatDate(process.actualFinish), Variance: `${process.varianceDays} days`, Completion: pct(process.progress) }} />
+        <DetailSection title="Dates and Performance" items={{ "Planned Start": formatDate(process.plannedStart), "Planned Finish": formatDate(process.plannedFinish), "Delivery Days": `${process.durationDays} days`, "Actual Start": formatDate(process.actualStart), "Actual Finish": formatDate(process.actualFinish), Variance: `${process.varianceDays} days`, Completion: pct(process.progress) }} />
         <DetailSection title="Ownership" items={{ "Business Owner": process.businessOwner, "Current Owner": process.currentOwner, Responsibility: process.responsibility, "Waiting For": process.waitingFor, Department: process.department, "Updated By": process.updatedBy }} />
         <DetailSection title="Blockers and Risks" items={{ Blocked: process.blocked ? "Yes" : "No", "Blocker description": process.blockerDescription, "Delay reason": process.delayReason, Health: process.health, Priority: process.priority, "Age of blocker": process.blocked ? `${staleDays(process) ?? "Not available"} days` : "Not provided" }} />
       </div>
@@ -676,7 +678,7 @@ function DetailSection({ title, items }: { title: string; items: Record<string, 
 
 function PhaseStep({ phase }: { phase: Process["phases"][number] }) {
   const Icon = phase.status === "Completed" ? CheckCircle2 : phase.blocked ? Lock : phase.health === "Red" ? AlertTriangle : phase.status === "In Progress" ? RefreshCcw : Gauge;
-  return <article className="phase-step"><Icon size={18} /><div><h4>{phase.phaseName}</h4><p>{phase.status} · {phase.responsibility}</p><dl><dt>Planned</dt><dd>{formatDate(phase.plannedStart)} - {formatDate(phase.plannedFinish)}</dd><dt>Actual</dt><dd>{formatDate(phase.actualStart)} - {formatDate(phase.actualFinish)}</dd><dt>Owner</dt><dd>{display(phase.currentOwner)}</dd><dt>Waiting</dt><dd>{display(phase.waitingFor)}</dd><dt>Variance</dt><dd>{phase.varianceDays} days</dd><dt>Blocked</dt><dd>{phase.blocked ? "Yes" : "No"}</dd><dt>Blocker</dt><dd>{display(phase.blockerDescription)}</dd><dt>Delay</dt><dd>{display(phase.delayReason)}</dd><dt>Next</dt><dd>{display(phase.nextAction)}</dd><dt>Updated</dt><dd>{formatDate(phase.lastUpdated, true)}</dd></dl></div></article>;
+  return <article className="phase-step"><Icon size={18} /><div><h4>{phase.phaseName}</h4><p>{phase.status} · {phase.responsibility}</p><dl><dt>Planned</dt><dd>{formatDate(phase.plannedStart)} - {formatDate(phase.plannedFinish)}</dd><dt>Days</dt><dd>{phase.durationDays} days</dd><dt>Actual</dt><dd>{formatDate(phase.actualStart)} - {formatDate(phase.actualFinish)}</dd><dt>Owner</dt><dd>{display(phase.currentOwner)}</dd><dt>Waiting</dt><dd>{display(phase.waitingFor)}</dd><dt>Variance</dt><dd>{phase.varianceDays} days</dd><dt>Blocked</dt><dd>{phase.blocked ? "Yes" : "No"}</dd><dt>Blocker</dt><dd>{display(phase.blockerDescription)}</dd><dt>Delay</dt><dd>{display(phase.delayReason)}</dd><dt>Next</dt><dd>{display(phase.nextAction)}</dd><dt>Updated</dt><dd>{formatDate(phase.lastUpdated, true)}</dd></dl></div></article>;
 }
 
 function ActivityItem({ activity }: { activity: Activity }) {

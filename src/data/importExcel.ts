@@ -4,7 +4,7 @@ import { toIsoDate } from "../utils/date";
 
 export const DEFAULT_TRACKER_FILE = "RPA_Project_Tracker_Web_Ready.xlsx";
 
-const requiredSheets = ["Project Tracker", "Settings"];
+const requiredSheets = ["Project Tracker"];
 const validPriorities = new Set(["", "Critical", "High", "Medium", "Low"]);
 const validBlocked = new Set(["", "Yes", "No"]);
 
@@ -75,11 +75,15 @@ function text(row: Row, ...keys: string[]): string {
 }
 
 function numberValue(row: Row, ...keys: string[]): number {
+  return optionalNumberValue(row, ...keys) ?? 0;
+}
+
+function optionalNumberValue(row: Row, ...keys: string[]): number | undefined {
   const raw = text(row, ...keys);
-  if (!raw) return 0;
+  if (!raw) return undefined;
   if (raw.endsWith("%")) return Number(raw.replace("%", "")) / 100;
   const value = Number(raw);
-  return Number.isFinite(value) ? value : 0;
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function progressValue(value: unknown): number | undefined {
@@ -100,6 +104,11 @@ function dateValue(row: Row, ...keys: string[]) {
     if (iso) return iso;
   }
   return undefined;
+}
+
+function varianceDaysValue(row: Row): number {
+  const value = optionalNumberValue(row, "Variance Days");
+  return value !== undefined && Math.abs(value) < 1000 ? value : 0;
 }
 
 function phaseValue(row: Row): string {
@@ -130,11 +139,32 @@ function processNameValue(row: Row, summaryRow?: Row): string {
 }
 
 function currentStage(phases: Phase[], status: string): string {
-  const active = phases.find((phase) => ["In Progress", "On Hold"].includes(phase.status));
+  const active = phases.find((phase) => ["in progress", "on hold"].includes(normalizeKey(phase.status)));
   if (active) return active.phaseName;
   if (String(status).toLowerCase() === "completed") return "Completed";
-  const firstOpen = phases.find((phase) => phase.status !== "Completed" && phase.status !== "Cancelled");
+  const firstOpen = phases.find((phase) => !["completed", "cancelled"].includes(normalizeKey(phase.status)));
   return firstOpen?.phaseName || "Not provided";
+}
+
+function statusFromPhases(phases: Phase[]): string {
+  if (!phases.length) return "Not Started";
+  const statuses = phases.map((phase) => normalizeKey(phase.status));
+  if (statuses.includes("on hold")) return "On Hold";
+  if (statuses.includes("in progress")) return "In Progress";
+  if (statuses.every((status) => status === "completed")) return "Completed";
+  return "Not Started";
+}
+
+function progressFromPhases(phases: Phase[]): number {
+  if (!phases.length) return 0;
+  return phases.reduce((sum, phase) => sum + phase.progress, 0) / phases.length;
+}
+
+function healthFromPhases(phases: Phase[]): string {
+  if (phases.some((phase) => phase.health === "Red")) return "Red";
+  if (phases.some((phase) => phase.health === "Amber")) return "Amber";
+  if (phases.some((phase) => phase.health === "Green")) return "Green";
+  return "";
 }
 
 function mapPhase(row: Row): Phase {
@@ -143,13 +173,14 @@ function mapPhase(row: Row): Phase {
     responsibility: text(row, "Responsibility"),
     status: text(row, "Status"),
     progress: numberValue(row, "Progress"),
+    durationDays: numberValue(row, "Days", "Duration Days", "Delivery Days"),
     currentOwner: text(row, "Current Owner"),
     waitingFor: text(row, "Waiting For"),
     plannedStart: dateValue(row, "Start", "Planned Start"),
     plannedFinish: dateValue(row, "Finish", "Planned Finish"),
     actualStart: dateValue(row, "Actual Start"),
     actualFinish: dateValue(row, "Actual Finish"),
-    varianceDays: numberValue(row, "Variance Days"),
+    varianceDays: varianceDaysValue(row),
     health: text(row, "Health"),
     blocked: blockedValue(row),
     blockerDescription: text(row, "Blocker Description"),
@@ -171,7 +202,8 @@ function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWa
     warnings.push({ code: "generated-process-id", message: `Generated an internal Process ID for process ${index + 1} because Excel was blank.` });
   }
   usedProcessIds.add(processId);
-  const status = text(summaryRow || {}, "Status") || text(row, "Status");
+  const status = text(summaryRow || {}, "Status") || text(row, "Status") || statusFromPhases(phases);
+  const progress = optionalNumberValue(summaryRow || {}, "Progress") ?? optionalNumberValue(row, "Progress") ?? progressFromPhases(phases);
   const plannedFinish = dateValue(summaryRow || {}, "Finish", "Planned Finish") || dateValue(row, "Finish", "Planned Finish");
   const actualFinish = dateValue(row, "Actual Finish");
   return {
@@ -181,10 +213,11 @@ function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWa
     businessOwner: text(row, "Business Owner"),
     currentStage: currentStage(phases, status),
     overallStatus: status || "Not provided",
-    progress: numberValue(summaryRow || {}, "Progress") || numberValue(row, "Progress"),
+    progress,
+    durationDays: optionalNumberValue(summaryRow || {}, "Days", "Duration Days", "Delivery Days") ?? optionalNumberValue(row, "Days", "Duration Days", "Delivery Days") ?? phases.reduce((sum, phase) => sum + phase.durationDays, 0),
     priority: text(row, "Priority") || "Medium",
-    health: text(summaryRow || {}, "Health") || text(row, "Health"),
-    currentOwner: text(row, "Current Owner") || text(summaryRow || {}, "Developer") || text(row, "Developer"),
+    health: text(summaryRow || {}, "Health") || text(row, "Health") || healthFromPhases(phases),
+    currentOwner: text(row, "Current Owner") || phases.find((phase) => ["in progress", "on hold"].includes(normalizeKey(phase.status)))?.currentOwner || text(summaryRow || {}, "Developer") || text(row, "Developer"),
     waitingFor: text(row, "Waiting For"),
     plannedStart: dateValue(summaryRow || {}, "Effective Start", "Auto Start", "Start", "Planned Start") || dateValue(row, "Start", "Planned Start"),
     plannedFinish,
@@ -192,7 +225,7 @@ function mapProcess(row: Row, phases: Phase[], index: number, warnings: ImportWa
     actualFinish,
     dueDate: plannedFinish,
     completionDate: actualFinish,
-    varianceDays: numberValue(row, "Variance Days"),
+    varianceDays: varianceDaysValue(row) || Math.max(0, ...phases.map((phase) => phase.varianceDays)),
     blocked: blockedValue(row) || phases.some((phase) => phase.blocked),
     blockerDescription: text(row, "Blocker Description") || phases.find((phase) => phase.blockerDescription)?.blockerDescription || "",
     delayReason: text(row, "Delay Reason") || phases.find((phase) => phase.delayReason)?.delayReason || "",

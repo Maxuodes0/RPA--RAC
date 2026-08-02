@@ -14,6 +14,7 @@ export function rowsForExport(processes: Process[]) {
     "Current Owner": process.currentOwner,
     "Waiting For": process.waitingFor,
     Blocked: process.blocked ? "Yes" : "No",
+    "Delivery Days": process.durationDays,
     "Due Date": process.dueDate,
     "Delay Days": process.varianceDays,
     "Next Action": process.nextAction,

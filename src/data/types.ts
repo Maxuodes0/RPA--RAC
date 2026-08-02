@@ -7,6 +7,7 @@ export interface Phase {
   responsibility: string;
   status: Status;
   progress: number;
+  durationDays: number;
   currentOwner: string;
   waitingFor: string;
   plannedStart?: string;
@@ -31,6 +32,7 @@ export interface Process {
   currentStage: string;
   overallStatus: Status;
   progress: number;
+  durationDays: number;
   priority: Priority;
   health: Health;
   currentOwner: string;
