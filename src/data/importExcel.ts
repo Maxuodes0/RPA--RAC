@@ -3,6 +3,7 @@ import { Activity, ImportError, ImportWarning, Phase, Process, ProjectData, Vali
 import { toIsoDate } from "../utils/date";
 
 export const DEFAULT_TRACKER_FILE = "RPA_Project_Tracker_Web_Ready.xlsx";
+export const DEFAULT_TRACKER_LABEL = "RPA Tracker.xlsx";
 
 const requiredSheets = ["Project Tracker"];
 const validPriorities = new Set(["", "Critical", "High", "Medium", "Low"]);
@@ -24,6 +25,11 @@ function canonicalHeader(value: unknown): string {
     "task id": "process id",
     infiermint: "process",
     "infiermint / phase": "process / phase",
+    "process / task": "process",
+    phase: "process / phase",
+    "duration days": "days",
+    "planned start": "start",
+    "planned finish": "finish",
   };
   return aliases[key] || key;
 }
@@ -244,7 +250,7 @@ function mapActivities(rows: Row[]): Activity[] {
       activityId: text(row, "Activity ID"),
       processId: text(row, "Process ID"),
       processName: text(row, "Process Name"),
-      phase: text(row, "Phase"),
+      phase: text(row, "Phase", "Process / Phase"),
       updateDate: dateValue(row, "Update Date"),
       updatedBy: text(row, "Updated By"),
       previousStatus: text(row, "Previous Status"),
@@ -295,6 +301,43 @@ function countInfrastructureActivities(rows: Row[]): number {
   return count;
 }
 
+function dashboardInfrastructureActivities(workbook: XLSX.WorkBook): Activity[] {
+  const sheet = workbook.Sheets.Dashboard;
+  if (!sheet?.["!ref"]) return [];
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "", raw: true });
+  const headerRow = rows.find((row) => row.map(normalizeKey).includes("provide servers") && row.map(normalizeKey).includes("uipath platform access"));
+  if (!headerRow) return [];
+  const headerIndex = rows.indexOf(headerRow);
+  const activityColumns = headerRow
+    .map((header, index) => ({ header: String(header || "").trim(), index }))
+    .filter(({ header }) => ["Provide Servers", "Team Access", "Application Setup", "UiPath Platform Access"].includes(header));
+  const activities: Activity[] = [];
+  rows.slice(headerIndex + 1).forEach((row) => {
+    const processName = String(row[10] || "").trim();
+    if (!processName) return;
+    activityColumns.forEach(({ header, index }) => {
+      const status = String(row[index] || "").trim();
+      if (!status) return;
+      const progress = progressValue(status === "Completed" ? 1 : status === "In Progress" ? 0.5 : 0) ?? 0;
+      activities.push({
+        activityId: `INFRA-${String(activities.length + 1).padStart(3, "0")}`,
+        processId: "INFRA",
+        processName,
+        phase: header,
+        progress,
+        updatedBy: "Project Manager",
+        previousStatus: "",
+        newStatus: status,
+        updateDescription: `${processName} - ${header} is ${status}.`,
+        nextAction: "",
+        waitingFor: "",
+        blocker: "",
+      });
+    });
+  });
+  return activities;
+}
+
 function readDashboardOverallProgress(workbook: XLSX.WorkBook): number | undefined {
   const sheet = workbook.Sheets.Dashboard;
   if (!sheet?.["!ref"]) return undefined;
@@ -343,7 +386,7 @@ export function validateWorkbook(workbook: XLSX.WorkBook, fileName: string, uplo
   });
 
   const activities = workbook.SheetNames.includes("Activity Log") ? mapActivities(readSheet(workbook, "Activity Log")) : [];
-  return { ok: errors.length === 0, errors, warnings, processCount: processRows.length, phaseCount: phaseRows.length, activityCount: activities.length + countInfrastructureActivities(rows), fileName, uploadedAt };
+  return { ok: errors.length === 0, errors, warnings, processCount: processRows.length, phaseCount: phaseRows.length, activityCount: activities.length + countInfrastructureActivities(rows) + dashboardInfrastructureActivities(workbook).length, fileName, uploadedAt };
 }
 
 export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, uploadedAt = new Date().toISOString()): ProjectData {
@@ -400,7 +443,7 @@ export function normalizeWorkbook(workbook: XLSX.WorkBook, fileName: string, upl
     overallProgress: readDashboardOverallProgress(workbook),
     totalProcesses: processes.length,
     processes,
-    activities: [...infrastructureActivities, ...mapActivities(readSheet(workbook, "Activity Log"))],
+    activities: [...infrastructureActivities, ...dashboardInfrastructureActivities(workbook), ...mapActivities(readSheet(workbook, "Activity Log"))],
     warnings,
   };
 }
@@ -417,5 +460,5 @@ export async function importDefaultExcel(): Promise<ProjectData> {
   const response = await fetch(`/data/${DEFAULT_TRACKER_FILE}`);
   if (!response.ok) throw new Error("Default Excel tracker could not be loaded.");
   const workbook = await readWorkbook(await response.arrayBuffer());
-  return normalizeWorkbook(workbook, DEFAULT_TRACKER_FILE, new Date().toISOString());
+  return normalizeWorkbook(workbook, DEFAULT_TRACKER_LABEL, new Date().toISOString());
 }
