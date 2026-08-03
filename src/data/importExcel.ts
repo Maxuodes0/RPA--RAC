@@ -75,6 +75,7 @@ function readSheet(workbook: XLSX.WorkBook, sheetName: string): Row[] {
 function text(row: Row, ...keys: string[]): string {
   for (const key of keys) {
     const value = row[normalizeKey(key)];
+    if (value === 0) continue;
     if (value !== undefined && value !== null && String(value).trim() !== "") return String(value).trim();
   }
   return "";
